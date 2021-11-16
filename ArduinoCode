@@ -1,0 +1,425 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <Adafruit_MotorShield.h>
+
+Adafruit_MotorShield AFMS1 = Adafruit_MotorShield(0x61);
+Adafruit_MotorShield AFMS2 = Adafruit_MotorShield();
+Adafruit_StepperMotor *Motor1 = AFMS2.getStepper(200, 1);
+Adafruit_StepperMotor *Motor2 = AFMS1.getStepper(200, 1);
+Adafruit_StepperMotor *Motor3 = AFMS1.getStepper(200, 2);
+
+#define RST_PIN         8
+#define SS_1_PIN        5
+#define SS_2_PIN        6
+#define SS_3_PIN        7
+#define NR_OF_READERS   3
+#define confirmpin 14 // A0
+#define timein 15 // A1
+#define timeincrement 16 // A2
+#define snack 2
+#define game 3
+
+static const int hermes = 1;  //all 3 will be 1 or 2 during noraml operation
+static const int venelope = 1;
+static const int artemis = 1;
+
+bool morningfeedhermes=false;
+bool morningfeedvenelope=false;
+bool morningfeedartemis=false;
+
+String AcceptedCard[] = {"B3 08 8F 97","E3 63 7B 97","23 2D 36 97"}; //hermes, venelope, artemis
+byte ssPins[] = {SS_1_PIN, SS_2_PIN, SS_3_PIN};
+
+MFRC522 mfrc522[NR_OF_READERS];// Create an MFRC522 instance :
+
+int hermesfeed = hermes;
+int venelopefeed = venelope;
+int artemisfeed = artemis;
+
+void setup() 
+{
+  Serial.begin(9600);           // Initialize serial communications with the PC
+  while (!Serial);              // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
+  SPI.begin();      // Init SPI bus
+  delay(50);
+  for (uint8_t reader = 0; reader < NR_OF_READERS; reader++) 
+  {
+    mfrc522[reader].PCD_Init(ssPins[reader], RST_PIN);
+    Serial.print(F("Reader "));
+    Serial.print(reader);
+    Serial.print(F(": "));
+    mfrc522[reader].PCD_DumpVersionToSerial();
+    mfrc522[reader].PCD_SetAntennaGain(mfrc522[reader].RxGain_max);
+  }
+  
+  pinMode(confirmpin, OUTPUT);
+  pinMode(snack, INPUT);
+  pinMode(game, INPUT);
+  pinMode(timein, INPUT);
+  pinMode(timeincrement, INPUT);
+
+  if (!AFMS1.begin()) 
+  {         // create with the default frequency 1.6KHz
+    Serial.println("Could not find Motor Shield 1. Check wiring.");
+  }
+  if (!AFMS2.begin()) 
+  {         // create with the default frequency 1.6KHz
+    Serial.println("Could not find Motor Shield 2. Check wiring.");
+  }
+  Motor1->setSpeed(10);  // 10 rpm
+  Motor2->setSpeed(10);  // 10 rpm
+  Motor3->setSpeed(10);  // 10 rpm
+  Motor1->release();  // 10 rpm
+  Motor2->release();  // 10 rpm
+  Motor3->release();  // 10 rpm
+  delay(5000);
+}
+
+void loop() 
+{
+String content= "";
+readpins();
+
+if(hermesfeed>0||venelopefeed>0||artemisfeed>0)
+{  
+ for (uint8_t reader = 0; reader < NR_OF_READERS; reader++) 
+ {
+  content="";
+    if (mfrc522[reader].PICC_IsNewCardPresent() && mfrc522[reader].PICC_ReadCardSerial()) 
+    {
+          for (int i = 0; i < mfrc522[reader].uid.size; i++) 
+           {
+              content.concat(String(mfrc522[reader].uid.uidByte[i] < 0x10 ? " 0" : " "));
+              content.concat(String(mfrc522[reader].uid.uidByte[i], HEX));
+           }
+          content.toUpperCase();
+          Serial.println(content);
+      for(int j=0;j<3;j++)
+      {
+          if (content.substring(1) == AcceptedCard[j]) //change here the UID of the card/cards that you want to give access
+          {
+           FeedCat(reader,j);
+          }        
+      }
+      mfrc522[reader].PICC_HaltA();// Halt PICC
+      mfrc522[reader].PCD_StopCrypto1();// Stop encryption on PCD
+    } //if (mfrc522[reader].PICC_IsNewC..
+ } //for(uint8_t reader..
+}
+}
+void FeedCat(int i,int j)// i is reader,j is cat
+{
+switch(i)
+{
+  case 0: // reader 1
+      switch(j)
+      {
+      case 0: 
+      Serial.println("MACH 1, HERMES");
+      if(morningfeedhermes==true)
+      {
+        feedmotor1(1);
+        morningfeedhermes=false;
+      }
+      else if(hermesfeed>0)
+      {
+        feedmotor1(2);     
+        hermesfeed--;         
+      }
+      break;
+      case 1:
+      Serial.println("MACH 1, Venelope");
+      if(morningfeedvenelope==true)
+      {
+        feedmotor1(1);
+        morningfeedvenelope=false;
+      }
+      else if(venelopefeed>0)
+      {
+        feedmotor1(2);     
+        venelopefeed--;         
+      }          
+      break;
+      case 2:
+      Serial.println("MACH 1, Apollo"); 
+      if(morningfeedartemis==true)
+      {
+        feedmotor1(1);
+        morningfeedartemis=false;
+      }
+      else if(artemisfeed>0)
+      {
+        feedmotor1(2);     
+        artemisfeed--;         
+      }                       
+      break;
+      default:
+      break;
+      }
+  break;
+  
+  case 1: //reader 2
+      switch(j)
+      {
+      case 0: 
+      Serial.println("MACH 2, HERMES");
+      if(morningfeedhermes==true)
+      {
+        feedmotor2(1);
+        morningfeedhermes=false;
+      }
+      else if(hermesfeed>0)
+      {
+        feedmotor2(2);     
+        hermesfeed--;         
+      }     
+      break;
+      case 1:
+      Serial.println("MACH 2, Venelope");  
+      if(morningfeedvenelope==true)
+      {
+        feedmotor2(1);
+        morningfeedvenelope=false;
+      }
+      else if(venelopefeed>0)
+      {
+        feedmotor2(2);     
+        venelopefeed--;         
+      }                    
+      break;
+      case 2:
+      Serial.println("MACH 2, Apollo"); 
+      if(morningfeedartemis==true)
+      {
+        feedmotor2(1);
+        morningfeedartemis=false;
+      }
+      else if(artemisfeed>0)
+      {
+        feedmotor2(2);     
+        artemisfeed--;         
+      }                       
+      break;
+      default:
+      break;
+      }  
+  break;
+  
+  case 2: //reader 3
+      switch(j)
+      {
+      case 0: 
+      Serial.println("MACH 3, HERMES");
+      if(morningfeedhermes==true)
+      {
+        feedmotor3(1);
+        morningfeedhermes=false;
+      }
+      else if(hermesfeed>0)
+      {
+        feedmotor3(2);     
+        hermesfeed--;         
+      }     
+      break;
+      case 1:
+      Serial.println("MACH 3, Venelope");      
+      if(morningfeedvenelope==true)
+      {
+        feedmotor3(1);
+        morningfeedvenelope=false;
+      }
+      else if(venelopefeed>0)
+      {
+        feedmotor3(2);     
+        venelopefeed--;         
+      }                 
+      break;
+      case 2:
+      Serial.println("MACH 3, Apollo");   
+      if(morningfeedartemis==true)
+      {
+        feedmotor3(1);
+        morningfeedartemis=false;
+      }
+      else if(artemisfeed>0)
+      {
+        feedmotor3(2);     
+        artemisfeed--;         
+      }                   
+      break;
+      default:
+      break;
+      }  
+  break;
+  
+  default:
+  break;
+}
+}
+
+void readpins()
+{
+  if(digitalRead(timeincrement)==HIGH)  //new feed period, reset counters
+  {
+    hermesfeed = hermes;
+    venelopefeed = venelope;
+    artemisfeed = artemis;    
+    digitalWrite(confirmpin,HIGH);
+    delay(100);
+    digitalWrite(confirmpin,LOW);
+  }
+  if(digitalRead(timein)==HIGH)  //morning bulk feed
+  {
+    hermesfeed = 0;
+    venelopefeed = 0;
+    artemisfeed = 0;
+    morningfeedhermes=true;  
+    morningfeedvenelope=true;  
+    morningfeedartemis=true;      
+    digitalWrite(confirmpin,HIGH);
+    delay(100);
+    digitalWrite(confirmpin,LOW);
+  }  
+  if(digitalRead(game)==HIGH)  
+  { 
+    Serial.println("GameTime");
+    digitalWrite(confirmpin,HIGH);
+    delay(100);
+    digitalWrite(confirmpin,LOW);
+    feedmotor1(4);   
+    feedmotor2(4);      
+    feedmotor3(4);  
+  }  
+  if(digitalRead(snack)==HIGH)
+  {   
+    Serial.println("SnackTime");
+    digitalWrite(confirmpin,HIGH);
+    delay(100);
+    digitalWrite(confirmpin,LOW);
+    feedmotor1(3);   
+    feedmotor2(3);      
+    feedmotor3(3);  
+  }    
+}
+void feedmotor1(int i)
+{
+  if(i==1)
+  {
+      for(int m=0;m<8;m++)
+      {
+      Motor1->step(25, BACKWARD, DOUBLE);
+      delay(100);
+      Motor1->step(6, FORWARD, DOUBLE);
+      delay(100);  
+      }
+      Motor1->release();
+  }
+  if(i==2)
+  {
+      for(int m=0;m<2;m++)
+      {
+      Motor1->step(25, BACKWARD, DOUBLE);
+      delay(100);
+      Motor1->step(6, FORWARD, DOUBLE);
+      delay(100);  
+      }
+      Motor1->release();
+  }
+  if(i==3)
+  {
+      for(int m=0;m<2;m++)
+      {
+      Motor1->step(25, BACKWARD, DOUBLE);
+      delay(100);
+      Motor1->step(6, FORWARD, DOUBLE);
+      delay(100);  
+      }
+      Motor1->release();
+
+  }
+  if(i==4)
+  {
+    //gameon
+  }
+}
+void feedmotor2(int i)
+{
+  if(i==1)
+  {
+      for(int m=0;m<8;m++)
+      {
+      Motor2->step(25, BACKWARD, DOUBLE);
+      delay(100);
+      Motor2->step(6, FORWARD, DOUBLE);
+      delay(100);  
+      }
+      Motor2->release();
+        
+  }
+  if(i==2)
+  {
+      for(int m=0;m<2;m++)
+      {
+      Motor2->step(25, BACKWARD, DOUBLE);
+      delay(100);
+      Motor2->step(6, FORWARD, DOUBLE);
+      delay(100);  
+      }
+      Motor2->release();  
+  }
+  if(i==3)
+  {
+      for(int m=0;m<2;m++)
+      {
+      Motor2->step(25, BACKWARD, DOUBLE);
+      delay(100);
+      Motor2->step(6, FORWARD, DOUBLE);
+      delay(100);  
+      }
+      Motor2->release();
+  }
+  if(i==4)
+  {
+    //gameon
+  }  
+}
+void feedmotor3(int i)
+{
+  if(i==1)
+  {
+      for(int m=0;m<8;m++)
+      {
+      Motor3->step(25, BACKWARD, DOUBLE);
+      delay(100);
+      Motor3->step(6, FORWARD, DOUBLE);
+      delay(100);  
+      }
+      Motor3->release();
+  }
+  if(i==2)
+  {
+      for(int m=0;m<2;m++)
+      {
+      Motor3->step(25, BACKWARD, DOUBLE);
+      delay(100);
+      Motor3->step(6, FORWARD, DOUBLE);
+      delay(100);  
+      }
+      Motor3->release();
+  }
+  if(i==3)
+  {
+      for(int m=0;m<2;m++)
+      {
+      Motor3->step(25, BACKWARD, DOUBLE);
+      delay(100);
+      Motor3->step(6, FORWARD, DOUBLE);
+      delay(100);  
+      }
+      Motor3->release();
+  }
+  if(i==4)
+  {
+    //gameon
+  }  
+}
