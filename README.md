@@ -7,4 +7,4 @@ It also utilizes 3 arduino MFRC type RFID readers. Each is powered by a small 3.
 
 The arduino, the shield, and the 5v to 3.3v converters all utilize a 5v input supply. I do use an arduino screw terminal shield on top to easily connect pins from the ESP to the arduino and to connect the 5v input to the arduino.
 
-When connecting the motorshield be sure to remove the VIN jumper (I blew 2 boards and an arduino somehow).
+When connecting the motorshield be sure to remove the VIN jumper (I blew 2 boards and an arduino somehow not doing this so best to be safe).
