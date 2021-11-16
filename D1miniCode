@@ -1,0 +1,188 @@
+#include <ESP8266WiFi.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+#include <PubSubClient.h>
+const int inpin = 4; // D2 - confirm ard receipt,connect to arduino pin A0             
+const int timeout = 5;  // D1 - High to clear variables on UNO, connect to arduino pin A1
+const int timeincrement = 12;  // D6 - High to signal Time Increment, connect to arduino pin A2
+const int game = 13; // D7 to arduino pin 3
+const int snack = 14; // D5 to arduino pin 2  
+         
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
+const char* ssid       = "";   //Replace with your own SSID
+const char* password   = "";  //Replace with your own password
+const char* mqttServer = "192.168.1.196";
+const int mqttPort = 1883;
+const char* mqttUser = "test";
+const char* mqttPassword = "test";
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void setup()
+{
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) 
+  {
+      delay(500);
+      Serial.print(".");
+  }
+  Serial.println("CONNECTED to WIFI");
+  
+  client.setServer(mqttServer, mqttPort);
+  client.setCallback(callback);
+  while(!client.connected()) 
+  {
+    Serial.println("Connecting to MQTT...");
+      if (client.connect("ESP8266Client", mqttUser, mqttPassword )) 
+      {
+        Serial.println("connected");   
+      } else 
+      {
+        Serial.print("failed with state ");
+        Serial.print(client.state());
+        delay(500);
+      }
+  }
+  client.publish("cat/feed/test", "Hello from ESP8266");
+  client.subscribe("cat/feed");
+  
+  pinMode(inpin, INPUT);
+  pinMode(timeout, OUTPUT);
+  pinMode(timeincrement, OUTPUT);
+  pinMode(game, OUTPUT);
+  pinMode(snack, OUTPUT);
+    digitalWrite(timeout, LOW);   
+    digitalWrite(timeincrement, LOW);   
+    digitalWrite(game, LOW);   
+    digitalWrite(snack, LOW);   
+    timeClient.begin();
+    timeClient.setTimeOffset(-18000);
+}
+
+void loop()
+{
+  delay(500);
+  if(!client.connected()) 
+  {
+    reconnect();
+  }
+  client.loop();
+  
+  checkLocalTime();
+}
+
+void checkLocalTime()
+{
+  timeClient.update();
+
+    if(timeClient.getHours()==9 && timeClient.getMinutes()==0)
+    {
+      relaymorning();
+      client.publish("cat/feed/alert","morningreset");
+      while(timeClient.getMinutes()==0){}               
+    }
+    if(timeClient.getHours()==1 && timeClient.getMinutes()==0)
+    {
+      newtimeincrement();
+      client.publish("cat/feed/alert","timereset");
+      while(timeClient.getMinutes()==0){}               
+    }
+    if(timeClient.getHours()==5 && timeClient.getMinutes()==0)
+    {
+      newtimeincrement();
+      client.publish("cat/feed/alert","timereset");
+      while(timeClient.getMinutes()==0){}               
+    }
+    if(timeClient.getHours()==10 && timeClient.getMinutes()==0)
+    {
+      newtimeincrement();
+      client.publish("cat/feed/alert","timereset");
+      while(timeClient.getMinutes()==0){}               
+    }    
+    if(timeClient.getHours()==13 && timeClient.getMinutes()==0)
+    {
+      newtimeincrement();
+      client.publish("cat/feed/alert","timereset");
+      while(timeClient.getMinutes()==0){}               
+    }
+    if(timeClient.getHours()==17 && timeClient.getMinutes()==0)
+    {
+      newtimeincrement();
+      client.publish("cat/feed/alert","timereset");
+      while(timeClient.getMinutes()==0){}               
+    }       
+}
+void relaymorning()
+{
+  digitalWrite(timeout, HIGH);
+    
+  while(digitalRead(inpin)==LOW)
+  {
+    //waits for receipt confirmation
+  }
+  digitalWrite(timeout, LOW);    
+}
+void newtimeincrement()
+{
+  digitalWrite(timeincrement,HIGH);
+  while(digitalRead(inpin)==LOW)
+  {
+    //waits for receipt confirmation
+  }
+  digitalWrite(timeincrement,LOW);  
+}
+void callback(char* topic, byte* payload, unsigned int length) 
+{
+  String command = "";
+  Serial.print("Message arrived in topic: ");
+  Serial.println(topic);
+  Serial.print("Message:");
+  
+  for (int i = 0; i < length; i++) 
+  {
+    command = command + (char)payload[i];
+  }
+  if(command == "SNACK")
+  {
+    Serial.println("SNACKTIME");
+    client.publish("cat/feed/test","SnackTime");
+    digitalWrite(snack,HIGH);
+    while(digitalRead(inpin)==LOW)
+    {
+      //waits for receipt confirmation
+    }
+    digitalWrite(snack,LOW);  
+  }
+  if(command == "GAME")
+  {
+    Serial.println("MAKE HERMES DANCE");    
+    client.publish("cat/feed/test","GameTime");
+    digitalWrite(game,HIGH);
+    while(digitalRead(inpin)==LOW)
+    {
+      //waits for receipt confirmation
+    }
+    digitalWrite(game,LOW);  
+  }  
+}
+
+void reconnect() 
+{
+  while (!client.connected()) // Loop until we're reconnected
+  {
+    Serial.print("Attempting MQTT connection...");
+    if (client.connect("ESP8266Client", mqttUser, mqttPassword ))    // Attempt to connect 
+    {
+      Serial.println("connected");
+      client.publish("cat/feed/test","RECONNECTED");
+      client.subscribe("cat/feed");
+    } else 
+    {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      delay(100);// Wait before retrying
+    }
+  }
+}
